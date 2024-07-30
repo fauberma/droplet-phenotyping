@@ -1,0 +1,4 @@
+batch_size: 1024
+ANALYSES_DIR: "/Users/fauberma/MPG/Experiments"
+DB_DIR: "/Users/fauberma/droplet_db"
+MODEL_DIR: "/Users/fauberma/MPG/Data/CNN_models"

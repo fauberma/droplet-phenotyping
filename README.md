@@ -37,12 +37,9 @@ conda activate phenotyping
 
 3. **Setup environment variables**
 
-   The pipeline requires the setup of envionment variables. They can be edited in the '.env' file.
-   The .env file defines 3 directories that are required to store results and data during analysis.
-
-   All results as well as experiment specific files will be found in ANALYSES_DIR, where each experiment has an experiment ID (expID)
-   The droplet database is stored in DB_DIR, since the databases can grow large with multiple experiments, this could be a location on an external drive.
-   Trained CNN models will be stored in MODEL_DIR.
+   The enviornment variables are set to default.
+   If the '/Experiment', '/Droplet_db' or 'CNN_models' directories should be moved to different locations (e.g. to an external drive) the corresponding paths need to be updated.
+   
 
 
 5. **Run the application**

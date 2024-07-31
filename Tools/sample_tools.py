@@ -10,7 +10,6 @@ from skimage import filters
 from skimage import color
 from PIL import Image, ImageDraw
 from skimage.transform import hough_circle, hough_circle_peaks
-from Setup.config import config
 from PIL import Image
 from Tools.leica_tools import RawLoader
 

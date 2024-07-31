@@ -11,14 +11,16 @@ import keras
 import re
 import os
 import glob
-from Setup.config import config
 from functools import partial
 import yaml
+from dotenv import load_dotenv
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from keras.models import Model, load_model
 from Tools.leica_tools import RawLoader
 from Tools.sample_tools import Sample
+
+load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
 class DbManager:
     def __init__(self):
@@ -39,7 +41,7 @@ class DbManager:
         wps = pd.DataFrame(columns=['expID', 'WP_ID', 'csv_file', 'annotated', 'labels'], dtype=object)
         files = glob.glob(os.path.join(self.an_dir, '*', 'WP_*', '*.csv'))
         for i, file in enumerate(files):
-            expID = re.search('[A-Z]{2,4}_[A-Z0-9]{2,4}_[0-9]{3}', file).group()
+            expID = re.search(os.getenv('expID_pattern'), file).group()
             WP_ID = re.search('WP_[0-9]', file).group()
             df = pd.read_csv(file, index_col='i')
             df.drop(columns=['GlobalID', ], inplace=True)
@@ -124,8 +126,8 @@ class DbManager:
     def generate_tfrecord(self, expID, shape=(128, 128)):
         rawloader = RawLoader(expID)
         drop_register = rawloader.get_dropregister()
-        drop_register['batch_id'] = drop_register.index // config['batch_size']
-        drop_register['batch_pos'] = drop_register.index % config['batch_size']
+        drop_register['batch_id'] = drop_register.index // os.getenv('batch_size')
+        drop_register['batch_pos'] = drop_register.index % os.getenv('batch_size')
 
         if not os.path.isdir(os.path.join(self.db_dir, expID)):
             os.mkdir(os.path.join(self.db_dir, expID))
@@ -188,7 +190,7 @@ class DbManager:
     def filter_db(self, expID, GlobalIDs):
         y, x, c = self.existing_dbs.loc[expID, ['y_shape', 'x_shape', 'n_channels']]
         df = pd.DataFrame(GlobalIDs, columns=['GlobalID']).reset_index()
-        df['tfrecord'] = (df['GlobalID'] // config['batch_size']).astype(int)
+        df['tfrecord'] = (df['GlobalID'] // os.getenv('batch_size')).astype(int)
         frame_array = np.zeros((len(GlobalIDs), y, x, c), dtype=np.uint16)
         with open(os.path.join(self.db_dir, expID, 'db_spec.yml'), 'r') as file:
             db_spec = yaml.safe_load(file)
@@ -210,7 +212,7 @@ class DbManager:
         rawloader = RawLoader(expID)
         drop_register = rawloader.get_dropregister()
         dataset = self.get_dataset(expID).map(prepare_inference).batch(32)
-        model = keras.models.load_model(os.path.join(config['MODEL_DIR'], model_name))
+        model = keras.models.load_model(os.path.join(os.getenv('MODEL_DIR'), model_name))
         y_predict_raw = model.predict(dataset)
         globalIDs = [e['GlobalID'] for e in dataset.unbatch().as_numpy_iterator()]
         y_predict = np.argmax(y_predict_raw, axis=-1).astype(bool)
@@ -257,6 +259,7 @@ class DbManager:
         y_predict = np.argmax(np.array(model.predict(dataset)), axis=-1).transpose()
         drop_register.loc[globalIDs, ['_'.join((prefix, tag)) for tag in tags]] = y_predict
         rawloader.update_dropregister(drop_register)
+
 
 if __name__ == "__main__":
     pass

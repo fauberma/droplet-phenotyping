@@ -8,8 +8,8 @@ import os
 import glob
 from readlif.reader import LifFile
 import datetime
-from Setup.config import config
-
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
 def parse_lif(file):
     lif = LifFile(file)

@@ -15,6 +15,7 @@ This project was developed to analyze microscopy data of immune cell- target cel
 It is recommended to setup a new environment before starting installing dependecies.
 ```bash
 conda create -n phenotyping python==3.12
+conda activate phenotyping
 ```
 
 ### Getting Started

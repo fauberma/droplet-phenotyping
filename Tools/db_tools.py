@@ -127,8 +127,8 @@ class DbManager:
     def generate_tfrecord(self, expID, shape=(128, 128)):
         rawloader = RawLoader(expID)
         drop_register = rawloader.get_dropregister()
-        drop_register['batch_id'] = drop_register.index // os.getenv('batch_size')
-        drop_register['batch_pos'] = drop_register.index % os.getenv('batch_size')
+        drop_register['batch_id'] = drop_register.index // int(os.getenv('batch_size'))
+        drop_register['batch_pos'] = drop_register.index % int(os.getenv('batch_size'))
 
         if not os.path.isdir(os.path.join(self.db_dir, expID)):
             os.mkdir(os.path.join(self.db_dir, expID))
@@ -191,7 +191,7 @@ class DbManager:
     def filter_db(self, expID, GlobalIDs):
         y, x, c = self.existing_dbs.loc[expID, ['y_shape', 'x_shape', 'n_channels']]
         df = pd.DataFrame(GlobalIDs, columns=['GlobalID']).reset_index()
-        df['tfrecord'] = (df['GlobalID'] // os.getenv('batch_size')).astype(int)
+        df['tfrecord'] = (df['GlobalID'] // int(os.getenv('batch_size'))).astype(int)
         frame_array = np.zeros((len(GlobalIDs), y, x, c), dtype=np.uint16)
         with open(os.path.join(self.db_dir, expID, 'db_spec.yml'), 'r') as file:
             db_spec = yaml.safe_load(file)

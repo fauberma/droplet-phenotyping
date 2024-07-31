@@ -22,6 +22,7 @@ from Tools.sample_tools import Sample
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
+
 class DbManager:
     def __init__(self):
         self.exp_dir = os.getenv('EXP_DIR')

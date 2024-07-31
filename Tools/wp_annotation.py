@@ -13,7 +13,6 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.realpath(__file__), os.pardir, os.pardir)))
-from Setup.config import config
 from Tools.db_tools import DbManager
 from Tools.leica_tools import RawLoader
 
@@ -44,7 +43,7 @@ def create_sliders(channel_df):
 
 class WP:
     def __init__(self, expID, WP_ID):
-        self.base = os.path.join(os.getenv('ANALYSES_DIR'), expID, WP_ID)
+        self.base = os.path.join(os.getenv('EXP_DIR'), expID, WP_ID)
         self.rawloader = RawLoader(expID)
         self.LUTs = self.rawloader.get_LUTs()
         self.channel_df = self.rawloader.channel_df

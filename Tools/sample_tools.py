@@ -91,7 +91,7 @@ class Sample:
         for dropID, drop in self.droplet_df.iterrows():
             image_draw.rectangle(xy=(drop.x_min, drop.y_min, drop.x_max, drop.y_max), outline=colors[drop['outlier']], width=4)
         if save:
-            im.save(os.path.join(self.rawloader.an_dir, 'preview.png'))
+            im.save(os.path.join(self.rawloader.exp_dir, 'preview.png'))
         else:
             return im
 

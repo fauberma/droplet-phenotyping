@@ -55,7 +55,7 @@ def _recursive_memblock_is_image(tree, return_list=None):
 
 def _load_LUTs():
     LUTs = {}
-    for file in glob.glob(os.path.join(os.getenv('SCRIPT_DIR'), 'Tools', 'LUTs', '*.npy')):
+    for file in glob.glob(os.path.join(os.path.dirname(__file__), 'LUTs', '*.npy')):
         name = os.path.basename(file)[:-4]
         LUTs[name] = np.load(file)
     return LUTs
@@ -64,10 +64,10 @@ def _load_LUTs():
 class RawLoader:
     def __init__(self, expID):
         self.expID = expID
-        self.an_dir = os.path.join(os.getenv('ANALYSES_DIR'), expID)
-        self.param_df = pd.read_excel(os.path.join(self.an_dir, 'setup.xlsx'), sheet_name='parameters', index_col=0)
-        self.channel_df = pd.read_excel(os.path.join(self.an_dir, 'setup.xlsx'), sheet_name='channels', index_col=0)
-        self.frame_df = pd.read_excel(os.path.join(self.an_dir, 'setup.xlsx'), sheet_name='raw_data', index_col=0)
+        self.exp_dir = os.path.join(os.getenv('EXP_DIR'), expID)
+        self.param_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='parameters', index_col=0)
+        self.channel_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='channels', index_col=0)
+        self.frame_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='raw_data', index_col=0)
         if 'annotations' in self.param_df.index:
             _ = self.param_df.loc['annotations', 'Value']
             if isinstance(_, str):
@@ -113,7 +113,7 @@ class RawLoader:
         return [LUTs[LUT] for LUT in self.channel_df['LUT']]
 
     def get_dropregister(self, as_multiindex=False):
-        csv_path = os.path.join(self.an_dir, 'drop_register.csv')
+        csv_path = os.path.join(self.exp_dir, 'drop_register.csv')
         if os.path.isfile(csv_path):
             drop_register = pd.read_csv(csv_path, index_col='GlobalID').convert_dtypes()
             if as_multiindex:
@@ -124,6 +124,6 @@ class RawLoader:
             print('No drop register exists yet.')
 
     def update_dropregister(self, drop_register):
-        csv_path = os.path.join(self.an_dir, 'drop_register.csv')
+        csv_path = os.path.join(self.exp_dir, 'drop_register.csv')
         drop_register.to_csv(csv_path)
 

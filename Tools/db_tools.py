@@ -24,7 +24,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
 class DbManager:
     def __init__(self):
-        self.an_dir = os.getenv('ANALYSES_DIR')
+        self.exp_dir = os.getenv('EXP_DIR')
         self.db_dir = os.getenv('DB_DIR')
         self.existing_dbs = self.load_dbs()
         self.existing_wps = self.load_wps()
@@ -39,7 +39,7 @@ class DbManager:
 
     def load_wps(self):
         wps = pd.DataFrame(columns=['expID', 'WP_ID', 'csv_file', 'annotated', 'labels'], dtype=object)
-        files = glob.glob(os.path.join(self.an_dir, '*', 'WP_*', '*.csv'))
+        files = glob.glob(os.path.join(self.exp_dir, '*', 'WP_*', '*.csv'))
         for i, file in enumerate(files):
             expID = re.search(os.getenv('expID_pattern'), file).group()
             WP_ID = re.search('WP_[0-9]', file).group()
@@ -83,9 +83,9 @@ class DbManager:
         wp = pd.DataFrame(index=selection, columns=rawloader.annotations).reset_index().rename_axis(index='i')
         frames = np.moveaxis(self.filter_db(expID, wp['GlobalID']), 3, 1)
 
-        os.mkdir(os.path.join(rawloader.an_dir,  wpID))
-        wp.to_csv(os.path.join(rawloader.an_dir, wpID, f'{wpID}.csv'))
-        np.save(os.path.join(rawloader.an_dir, wpID, f'{wpID}.npy'), frames)
+        os.mkdir(os.path.join(rawloader.exp_dir, wpID))
+        wp.to_csv(os.path.join(rawloader.exp_dir, wpID, f'{wpID}.csv'))
+        np.save(os.path.join(rawloader.exp_dir, wpID, f'{wpID}.npy'), frames)
         self.existing_wps = self.load_wps()
 
     def load_dbs(self):
@@ -219,7 +219,7 @@ class DbManager:
         drop_register.loc[globalIDs, 'outlier'] = y_predict
         rawloader.update_dropregister(drop_register)
 
-        with PdfPages(os.path.join(rawloader.an_dir, 'outlier_summary.pdf')) as pdf:
+        with PdfPages(os.path.join(rawloader.exp_dir, 'outlier_summary.pdf')) as pdf:
             for outlier in [True, False]:
                 fig, axs = plt.subplots(figsize=(8,8), ncols=8, nrows=8)
                 subset = drop_register.query(f'outlier == {outlier}').copy()

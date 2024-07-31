@@ -37,14 +37,15 @@ conda activate phenotyping
 
 3. **Setup environment variables**
 
-   The enviornment variables are set to default.
-   If the '/Experiment', '/Droplet_db' or 'CNN_models' directories should be moved to different locations (e.g. to an external drive) the corresponding paths need to be updated.
+   The enviornment variables are set to default in the `.env` file.
+   The directories `/Experiments`, `/Droplet_db` or `CNN_models` can be moved to different locations (e.g. external drives).
+   The new location of the directories must be updated in the `.env`.
    
 
 
 5. **Run the application**
 
-  The pipeline can be executed step-by-step in the 'full_pipeline.ipynb' notebook.
+   A step-by-step guide for the full execution of the pipeline is demonstrated `full_pipeline.ipynb` notebook.
 
 ## Usage
 

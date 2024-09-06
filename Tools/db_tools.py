@@ -22,7 +22,6 @@ from Tools.sample_tools import Sample
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
-
 class DbManager:
     def __init__(self):
         self.exp_dir = os.getenv('EXP_DIR')
@@ -72,14 +71,14 @@ class DbManager:
             print('No existing Work Packages found')
             return pd.DataFrame(columns=['WP_ID', 'i', 'GlobalID'])
 
-    def generate_wp(self, expID, exclude_query='index != index'):
+    def generate_wp(self, expID, sample_size=100, exclude_query='index != index'):
         rawloader = RawLoader(expID)
         drop_register = rawloader.get_dropregister()
         existing_WPs = self.get_wps(expID)
         wpID = f'WP_{len(existing_WPs["WP_ID"].unique()) +1}'
         drop_register.drop(index=existing_WPs['GlobalID'], inplace=True)
         drop_register.drop(index=drop_register.query(exclude_query).index, inplace=True)
-        selection = drop_register.groupby('frameID').sample(rawloader.param_df.loc['wp_size', 'Value']).index
+        selection = drop_register.groupby('frameID').sample(sample_size).index
 
         wp = pd.DataFrame(index=selection, columns=rawloader.annotations).reset_index().rename_axis(index='i')
         frames = np.moveaxis(self.filter_db(expID, wp['GlobalID']), 3, 1)
@@ -161,6 +160,7 @@ class DbManager:
                         preprocessed_image = tf.convert_to_tensor(droplet_frame, dtype=tf.uint16)
                         preprocessed_image = tf.cast(tf.image.resize(preprocessed_image, size=[shape[0], shape[1]]), tf.uint16)
                         writer.write(self.serialize_example(preprocessed_image, dropID, expID))
+        self.existing_dbs = self.load_dbs()
 
     def get_dataset(self, expID, return_spec=False, shuffle=False):
         fnames = glob.glob(os.path.join(self.db_dir, expID, '*.tfrecord'))
@@ -205,7 +205,7 @@ class DbManager:
                     frame_array[position, :, :, :] = element['frame']
         return frame_array
 
-    def detect_outliers(self, expID, model_name='outlier.h5'):
+    def detect_outliers(self, expID, model_name):
         def prepare_inference(element):
             element['outlier_input'] = tf.cast(element['frame'][:, :, tf.constant(0)], tf.float32) / 65535
             return element
@@ -260,6 +260,15 @@ class DbManager:
         y_predict = np.argmax(np.array(model.predict(dataset)), axis=-1).transpose()
         drop_register.loc[globalIDs, ['_'.join((prefix, tag)) for tag in tags]] = y_predict
         rawloader.update_dropregister(drop_register)
+
+    def get_models(self, type):
+        pass
+
+    def get_expIDs(self):
+        return ['NKIP_FA_066', 'NKIP_FA_067']
+
+    def new_experiment(self, expID):
+        pass
 
 
 if __name__ == "__main__":

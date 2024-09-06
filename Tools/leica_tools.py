@@ -65,25 +65,18 @@ class RawLoader:
     def __init__(self, expID):
         self.expID = expID
         self.exp_dir = os.path.join(os.getenv('EXP_DIR'), expID)
-        self.param_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='parameters', index_col=0)
+        self.param_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='parameters', header=None, index_col=0)
         self.channel_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='channels', index_col=0)
         self.frame_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='raw_data', index_col=0)
-        if 'annotations' in self.param_df.index:
-            _ = self.param_df.loc['annotations', 'Value']
-            if isinstance(_, str):
-                self.annotations = [_, ]
-            else:
-                self.annotations = list(_)
+        self.conditions = self.frame_df.columns.drop(['droplet_size', 'size_range', 'image_index', 't_index', 'path'], errors='ignore').to_list()
+        if 'Key' in self.param_df.index: #legacy format of setup.xlsx
+            self.annotations = self.param_df.loc['annotations', 1].to_list()
         else:
-            self.annotations = []
-        if 'conditional' in self.param_df.index:
-            _ = self.param_df.loc['conditional', 'Value']
-            if isinstance(_, str):
-                self.conditions = [_, ]
-            else:
-                self.conditions = list(_)
-        else:
-            self.conditions = []
+            self.annotations = self.param_df.loc['annotations', :].to_list()
+
+
+
+
 
     def get_frame(self, frameID):
         meta = self.get_meta(frameID)

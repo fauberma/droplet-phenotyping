@@ -1,5 +1,7 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, Response
 from Tools.db_tools import DbManager
+from Tools.leica_tools import RawLoader
+import json
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -43,6 +45,14 @@ def generate_wp():
 @app.route('/get_experiments', methods=['GET'])
 def get_experiments():
     return jsonify(dbm.get_experiments())
+
+@app.route('/get_experiment_data', methods=['GET'])
+def get_experiment_data():
+    expID = request.args.get('expID')
+    rawloader = RawLoader(expID)
+    df = rawloader.frame_df.reset_index(drop=False).to_dict(orient='records')
+    response_json = json.dumps(df)
+    return Response(response_json, content_type="application/json")
 
 @app.route('/get_models', methods=['GET'])
 def get_models():

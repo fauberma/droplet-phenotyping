@@ -1,53 +1,5 @@
 let selectedExperiment = null; // Store the selected experiment
-
-// Function to fetch and display experiments in the sidebar
-function fetchAndDisplayExperiments() {
-    console.log("Fetching available experiments..."); // Debugging
-
-    fetch('http://localhost:8080/get_experiments', {
-        method: 'GET'
-    })
-    .then(response => {
-        console.log("Response received:", response); // Debugging
-        return response.json();
-    })
-    .then(data => {
-        console.log("Data received:", data); // Debugging
-        const experimentList = document.getElementById('experiment-list');
-        experimentList.innerHTML = ''; // Clear the list first
-
-        if (!Array.isArray(data) || data.length === 0) {
-            console.log("No experiments found."); // Debugging
-            return; // No experiments to display
-        }
-
-        // Loop through each experiment and add it to the list
-        data.forEach(experiment => {
-            const li = document.createElement('li');
-            li.textContent = experiment;
-            li.classList.add('experiment-item');
-
-            // Add a click event listener to select the experiment
-            li.addEventListener('click', function() {
-                // Mark this as the selected experiment
-                selectedExperiment = experiment;
-
-                // Highlight the selected experiment
-                document.querySelectorAll('.experiment-item').forEach(item => {
-                    item.classList.remove('selected'); // Remove 'selected' from all
-                });
-                li.classList.add('selected'); // Highlight the clicked experiment
-            });
-
-            experimentList.appendChild(li);
-        });
-    })
-    .catch(error => {
-        console.error('Error fetching experiments:', error); // Log any errors
-        alert('Failed to fetch experiments. Check console for details.');
-    });
-}
-
+let allExperiments = []; // Store all experiments to allow filtering
 
 // Fetch models for Detect Outliers form and log responses for debugging
 function fetchAndDisplayModelsForOutliers() {
@@ -87,11 +39,113 @@ function fetchAndDisplayModelsForCellCount() {
     .catch(error => console.error('Error fetching models:', error));
 }
 
-// Helper function to display result in the 'result' div
-function displayResult(result) {
-    const resultDiv = document.getElementById('result');
-    resultDiv.innerHTML = `<h2>Response</h2><pre>${JSON.stringify(result, null, 2)}</pre>`;
+// Function to fetch and display experiments in the sidebar
+function fetchAndDisplayExperiments() {
+    fetch('http://localhost:8080/get_experiments', {
+        method: 'GET'
+    })
+    .then(response => response.json())
+    .then(data => {
+        allExperiments = data; // Store the fetched experiments
+        displayFilteredExperiments(); // Display all experiments initially
+    })
+    .catch(error => {
+        console.error('Error fetching experiments:', error);
+        alert('Failed to fetch experiments. Check console for details.');
+    });
 }
+
+// Function to display experiments based on the filter input
+function displayFilteredExperiments() {
+    const filterValue = document.getElementById('filter-input').value.toLowerCase();
+    const experimentList = document.getElementById('experiment-list');
+    experimentList.innerHTML = ''; // Clear the list first
+
+    const filteredExperiments = allExperiments.filter(experiment =>
+        experiment.toLowerCase().startsWith(filterValue)
+    );
+
+    if (filteredExperiments.length === 0) {
+        const noResult = document.createElement('li');
+        noResult.textContent = "No experiments found.";
+        experimentList.appendChild(noResult);
+    } else {
+        filteredExperiments.forEach(experiment => {
+            const li = document.createElement('li');
+            li.textContent = experiment;
+            li.classList.add('experiment-item');
+
+            // Add a click event listener to select the experiment
+            li.addEventListener('click', function() {
+                selectedExperiment = experiment;
+
+                document.querySelectorAll('.experiment-item').forEach(item => {
+                    item.classList.remove('selected');
+                });
+                li.classList.add('selected');
+
+                // Fetch and display the experiment data when an experiment is selected
+                fetchExperimentData(selectedExperiment);
+            });
+
+            experimentList.appendChild(li);
+        });
+    }
+}
+
+function fetchExperimentData(expID) {
+    fetch(`http://localhost:8080/get_experiment_data?expID=${expID}`, {
+        method: 'GET'
+    })
+    .then(response => response.json()) // Assuming the response is in JSON format
+    .then(data => {
+        // Now you have the experiment data in 'data'
+        // You can use it to populate a table or display the information as needed
+        console.log(data); // For debugging purposes
+        displayExperimentData(data); // Function to handle rendering the table
+    })
+    .catch(error => {
+        console.error('Error fetching experiment data:', error);
+    });
+}
+
+function displayExperimentData(data) {
+    const tableContainer = document.getElementById('table-container');
+    tableContainer.innerHTML = ''; // Clear previous data
+
+    // Create the table
+    const table = document.createElement('table');
+    table.classList.add('experiment-data-table'); // Add class for styling
+
+    // Create the header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headers = Object.keys(data[0]); // Assuming each row is an object
+    headers.forEach(header => {
+        const th = document.createElement('th');
+        th.textContent = header;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Create the body
+    const tbody = document.createElement('tbody');
+    data.forEach(row => {
+        const tr = document.createElement('tr');
+        headers.forEach(header => {
+            const td = document.createElement('td');
+            td.textContent = row[header]; // Add data to the cells
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    // Append the table to the container
+    tableContainer.appendChild(table);
+}
+
 
 // Ensure an experiment is selected before submitting the form
 function ensureExperimentSelected() {
@@ -101,6 +155,8 @@ function ensureExperimentSelected() {
     }
     return true;
 }
+
+
 
 // Function to trigger Detect Droplets API
 function triggerDetectDroplets(event) {
@@ -113,9 +169,6 @@ function triggerDetectDroplets(event) {
         method: 'POST'
     })
     .then(response => response.json())
-    .then(result => {
-        displayResult(result);
-    })
     .catch(error => console.error('Error:', error));
 }
 
@@ -130,9 +183,6 @@ function triggerDetectOutliers(event) {
         method: 'POST'
     })
     .then(response => response.json())
-    .then(result => {
-        displayResult(result);
-    })
     .catch(error => console.error('Error:', error));
 }
 
@@ -147,9 +197,6 @@ function triggerCellCount(event) {
         method: 'POST'
     })
     .then(response => response.json())
-    .then(result => {
-        displayResult(result);
-    })
     .catch(error => console.error('Error:', error));
 }
 
@@ -165,11 +212,10 @@ function triggerGenerateWP(event) {
         method: 'POST'
     })
     .then(response => response.json())
-    .then(result => {
-        displayResult(result);
-    })
     .catch(error => console.error('Error:', error));
 }
+
+
 
 // Add event listeners to the forms
 function setupFormListeners() {
@@ -178,6 +224,11 @@ function setupFormListeners() {
     document.getElementById('form_cc').addEventListener('submit', triggerCellCount);
     document.getElementById('form_wp').addEventListener('submit', triggerGenerateWP);
 }
+
+
+// Add an event listener for filtering experiments
+document.getElementById('filter-input').addEventListener('input', displayFilteredExperiments);
+
 
 // Call the fetchAndDisplayExperiments function when the page loads and set up form listeners
 document.addEventListener('DOMContentLoaded', () => {

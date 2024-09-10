@@ -105,18 +105,18 @@ class RawLoader:
         LUTs = _load_LUTs()
         return [LUTs[LUT] for LUT in self.channel_df['LUT']]
 
-    def get_dropregister(self, as_multiindex=False):
-        csv_path = os.path.join(self.exp_dir, 'drop_register.csv')
+    def get_droplet_df(self, as_multiindex=False):
+        csv_path = os.path.join(self.exp_dir, 'droplets.csv')
         if os.path.isfile(csv_path):
-            drop_register = pd.read_csv(csv_path, index_col='GlobalID').convert_dtypes()
+            droplet_df = pd.read_csv(csv_path, index_col='GlobalID').convert_dtypes()
             if as_multiindex:
-                return drop_register.set_index(pd.MultiIndex.from_product([[self.expID], drop_register.index], names=['expID', 'GlobalID']))
+                return droplet_df.set_index(pd.MultiIndex.from_product([[self.expID], droplet_df.index], names=['expID', 'GlobalID']))
             else:
-                return drop_register
+                return droplet_df
         else:
             print('No drop register exists yet.')
 
-    def update_dropregister(self, drop_register):
-        csv_path = os.path.join(self.exp_dir, 'drop_register.csv')
-        drop_register.to_csv(csv_path)
+    def update_droplet_df(self, droplet_df):
+        csv_path = os.path.join(self.exp_dir, 'droplets.csv')
+        droplet_df.to_csv(csv_path)
 

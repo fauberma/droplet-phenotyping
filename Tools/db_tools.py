@@ -29,13 +29,14 @@ class DbManager:
         self.existing_dbs = self.load_dbs()
         self.existing_wps = self.load_wps()
 
-    def generate_drop_register(self, expID, mode='constant'):
+    def detect_droplets(self, expID, mode='constant'):
         rawloader = RawLoader(expID)
         df_list = []
         for frameID in rawloader.frame_df.index:
             df_list.append(Sample(expID, frameID).detect_droplets(mode=mode, return_df=True))
-        drop_register = pd.concat(df_list).reset_index(drop=True).rename_axis('GlobalID')
-        rawloader.update_dropregister(drop_register)
+        droplets = pd.concat(df_list).reset_index(drop=True).rename_axis('GlobalID')
+        rawloader.update_droplet_df(droplets)
+        self.add_tfrecord(expID)
 
     def load_wps(self):
         wps = pd.DataFrame(columns=['expID', 'WP_ID', 'csv_file', 'annotated', 'labels'], dtype=object)
@@ -52,16 +53,16 @@ class DbManager:
             wps = wps.reset_index(drop=True)
         return wps
 
-    def get_wps(self, expID, allow_partial=False, as_multiindex=False):
+    def get_wps(self, expID, filter_annotations='full', as_multiindex=False):
         rawloader = RawLoader(expID)
         wps = self.existing_wps.query(f'expID == "{expID}"')
         if wps.shape[0] > 0:
             df = pd.concat([pd.read_csv(csv) for csv in wps['csv_file']], keys=wps['WP_ID'].tolist(), names=['WP_ID', ])
             df.reset_index(level=0, inplace=True)
-            if allow_partial:
-                df.dropna(axis='index', how='all', subset=rawloader.annotations, inplace=True, ignore_index=True)
-            else:
+            if filter_annotations == 'full':
                 df.dropna(axis='index', how='any', subset=rawloader.annotations, inplace=True, ignore_index=True)
+            elif filter_annotations == 'partial':
+                df.dropna(axis='index', how='all', subset=rawloader.annotations, inplace=True, ignore_index=True)
             df = df.convert_dtypes()
             if as_multiindex:
                 return df.set_index(pd.MultiIndex.from_product([[expID], df['GlobalID']], names=['expID', 'GlobalID']))
@@ -73,19 +74,19 @@ class DbManager:
 
     def generate_wp(self, expID, sample_size=100, exclude_query='index != index'):
         rawloader = RawLoader(expID)
-        drop_register = rawloader.get_dropregister()
-        existing_WPs = self.get_wps(expID)
-        wpID = f'WP_{len(existing_WPs["WP_ID"].unique()) +1}'
-        drop_register.drop(index=existing_WPs['GlobalID'], inplace=True)
-        drop_register.drop(index=drop_register.query(exclude_query).index, inplace=True)
-        selection = drop_register.groupby('frameID').sample(sample_size).index
+        droplet_df = rawloader.get_droplet_df()
+        existing_WPs = self.get_wps(expID, filter_annotations='None')
+        wpID = 'WP_' + str(self.existing_wps.query(f'expID == "{expID}"').index.size + 1)
+        droplet_df.drop(index=existing_WPs['GlobalID'], inplace=True)
+        droplet_df.drop(index=droplet_df.query(exclude_query).index, inplace=True)
+        selection = droplet_df.groupby('frameID').sample(sample_size).index
 
         wp = pd.DataFrame(index=selection, columns=rawloader.annotations).reset_index().rename_axis(index='i')
         frames = np.moveaxis(self.filter_db(expID, wp['GlobalID']), 3, 1)
 
-        os.mkdir(os.path.join(rawloader.exp_dir, wpID))
-        wp.to_csv(os.path.join(rawloader.exp_dir, wpID, f'{wpID}.csv'))
-        np.save(os.path.join(rawloader.exp_dir, wpID, f'{wpID}.npy'), frames)
+        os.mkdir(os.path.join(os.getenv('EXP_DIR'), expID, wpID))
+        wp.to_csv(os.path.join(os.getenv('EXP_DIR'), expID, wpID, f'{wpID}.csv'))
+        np.save(os.path.join(os.getenv('EXP_DIR'), expID, wpID, f'{wpID}.npy'), frames)
         self.existing_wps = self.load_wps()
 
     def load_dbs(self):
@@ -94,7 +95,7 @@ class DbManager:
         for file in spec_files:
             with open(file, 'r') as f:
                 data = yaml.safe_load(f)
-            expID = re.search('[A-Z]{2,4}_[A-Z0-9]{2,4}_[0-9]{3}', file).group()
+            expID = re.search(os.getenv('expID_pattern'), file).group()
             dbs.loc[expID, :] = pd.Series(data)
         return dbs.sort_index()
 
@@ -123,11 +124,11 @@ class DbManager:
         parsed_features['frame'] = frame
         return parsed_features
 
-    def generate_tfrecord(self, expID, shape=(128, 128)):
+    def add_tfrecord(self, expID, shape=(128, 128)):
         rawloader = RawLoader(expID)
-        drop_register = rawloader.get_dropregister()
-        drop_register['batch_id'] = drop_register.index // int(os.getenv('batch_size'))
-        drop_register['batch_pos'] = drop_register.index % int(os.getenv('batch_size'))
+        droplet_df = rawloader.get_droplet_df()
+        droplet_df['batch_id'] = droplet_df.index // int(os.getenv('batch_size'))
+        droplet_df['batch_pos'] = droplet_df.index % int(os.getenv('batch_size'))
 
         if not os.path.isdir(os.path.join(self.db_dir, expID)):
             os.mkdir(os.path.join(self.db_dir, expID))
@@ -136,7 +137,7 @@ class DbManager:
             return
 
         data = {
-            'n_frames': drop_register.index.size,
+            'n_frames': droplet_df.index.size,
             'y_shape': shape[0],
             'x_shape': shape[1],
             'n_channels': rawloader.channel_df.index.size,
@@ -146,7 +147,7 @@ class DbManager:
             yaml.dump(data, outfile)
 
         frame, meta = rawloader.get_frame(0)
-        for batch_id, batch_subset in drop_register.groupby('batch_id'):
+        for batch_id, batch_subset in droplet_df.groupby('batch_id'):
             fname = os.path.join(self.db_dir, expID, f'{batch_id}.tfrecord')
             with tf.io.TFRecordWriter(fname) as writer:
 
@@ -211,19 +212,19 @@ class DbManager:
             return element
 
         rawloader = RawLoader(expID)
-        drop_register = rawloader.get_dropregister()
+        droplet_df = rawloader.get_droplet_df()
         dataset = self.get_dataset(expID).map(prepare_inference).batch(32)
         model = keras.models.load_model(os.path.join(os.getenv('MODEL_DIR'), model_name))
         y_predict_raw = model.predict(dataset)
         globalIDs = [e['GlobalID'] for e in dataset.unbatch().as_numpy_iterator()]
         y_predict = np.argmax(y_predict_raw, axis=-1).astype(bool)
-        drop_register.loc[globalIDs, 'outlier'] = y_predict
-        rawloader.update_dropregister(drop_register)
+        droplet_df.loc[globalIDs, 'outlier'] = y_predict
+        rawloader.update_droplet_df(droplet_df)
 
         with PdfPages(os.path.join(rawloader.exp_dir, 'outlier_summary.pdf')) as pdf:
             for outlier in [True, False]:
                 fig, axs = plt.subplots(figsize=(8,8), ncols=8, nrows=8)
-                subset = drop_register.query(f'outlier == {outlier}').copy()
+                subset = droplet_df.query(f'outlier == {outlier}').copy()
                 size = subset.index.size
                 IDs = subset.sample(min(size, 64)).index
                 frames = self.filter_db(expID, IDs)[:, :, :, 0]
@@ -252,23 +253,26 @@ class DbManager:
         tags = [layer.name[:-7] for layer in model.layers[-4:]]
 
         rawloader = RawLoader(expID)
-        drop_register = rawloader.get_dropregister()
+        droplet_df = rawloader.get_droplet_df()
         ds = self.get_dataset(expID)
         globalIDs = np.array([element['GlobalID'] for element in ds.as_numpy_iterator()])
 
         dataset = ds.map(prepare_data).batch(32)
         y_predict = np.argmax(np.array(model.predict(dataset)), axis=-1).transpose()
-        drop_register.loc[globalIDs, ['_'.join((prefix, tag)) for tag in tags]] = y_predict
-        rawloader.update_dropregister(drop_register)
+        droplet_df.loc[globalIDs, ['_'.join((prefix, tag)) for tag in tags]] = y_predict
+        rawloader.update_droplet_df(droplet_df)
 
     def get_models(self, type):
-        pass
+        models = glob.glob(os.path.join(os.getenv('MODEL_DIR'), type, '*.h5'))
+        return [os.path.basename(model).split('.')[0] for model in models]
 
-    def get_expIDs(self):
-        return ['NKIP_FA_066', 'NKIP_FA_067']
-
-    def new_experiment(self, expID):
-        pass
+    def get_experiments(self):
+        files = []
+        for file in glob.glob(os.path.join(os.getenv('EXP_DIR'), '*', 'setup.xlsx')):
+            if re.search(os.getenv('expID_pattern'), file):
+                files.append(re.search(os.getenv('expID_pattern'), file).group())
+        files.sort()
+        return files
 
 
 if __name__ == "__main__":

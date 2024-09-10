@@ -1,21 +1,21 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from Tools.db_tools import DbManager
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)  # Allow CORS for cross-origin requests
 
 dbm = DbManager()
 
-@app.route('/generate_drop_register', methods=['POST'])
-def generate_drop_register():
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/detetct_droplets', methods=['POST'])
+def detect_droplets():
     expID = request.args.get('expID')
     mode = request.args.get('mode')
-    result = dbm.generate_drop_register(expID=expID, mode=mode)
-    return jsonify(result)
-
-@app.route('/generate_tfrecord', methods=['POST'])
-def generate_tfrecord():
-    expID = request.args.get('expID')
-    result = dbm.generate_tfrecord(expID=expID)
+    result = dbm.detect_droplets(expID=expID, mode=mode)
     return jsonify(result)
 
 @app.route('/detect_outliers', methods=['POST'])
@@ -37,12 +37,18 @@ def generate_wp():
     expID = request.args.get('expID')
     wp_size = int(request.args.get('wp_size'))
     exclude_query = request.args.get('exclude_query')
-    result = dbm.generate_wp(expID=expID, wp_size=wp_size, exclude_query=exclude_query)
+    result = dbm.generate_wp(expID=expID, sample_size=wp_size, exclude_query=exclude_query)
     return jsonify(result)
 
-@app.route('/generate_wp', methods=['GET'])
+@app.route('/get_experiments', methods=['GET'])
 def get_experiments():
-    return jsonify(dbm.get_expIDs())
+    return jsonify(dbm.get_experiments())
+
+@app.route('/get_models', methods=['GET'])
+def get_models():
+    model_type = request.args.get('model_type')
+    models = dbm.get_models(model_type)
+    return jsonify(models)
 
 
 if __name__ == '__main__':

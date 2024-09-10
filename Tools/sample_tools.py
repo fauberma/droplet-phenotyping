@@ -22,9 +22,9 @@ class Sample:
         self.droplet_df = pd.DataFrame(columns=['Score', 'x', 'y', 'r', 'x_min', 'y_min', 'x_max', 'y_max'])
 
     def reload_droplets(self):
-        drop_register = self.rawloader.get_dropregister()
-        if drop_register is not None:
-            selection = drop_register.query(f'frameID == {self.frameID}')
+        droplet_df = self.rawloader.get_droplet_df()
+        if droplet_df is not None:
+            selection = droplet_df.query(f'frameID == {self.frameID}')
             self.droplet_df = selection.drop(columns='frameID')
 
     def detect_droplets(self, mode='constant', channel_index=0, return_df=True):

@@ -59,10 +59,10 @@ class WP:
         self.i_max = self.df.index.size
         self.annotations = self.df.drop(columns=['GlobalID']).columns
 
-        # Check if predictions have been made in drop_register
-        self.drop_register = pd.read_csv(os.path.join(self.base, os.pardir, 'drop_register.csv'), index_col='GlobalID')
-        self.predictions = self.drop_register.loc[
-            self.df['GlobalID'], self.drop_register.columns.str.startswith('PREDICTED')]
+        # Check if predictions have been made in droplet_df
+        self.droplet_df = pd.read_csv(os.path.join(self.base, os.pardir, 'droplets.csv'), index_col='GlobalID')
+        self.predictions = self.droplet_df.loc[
+            self.df['GlobalID'], self.droplet_df.columns.str.startswith('PREDICTED')]
 
         self.frames = np.load(os.path.join(self.base, WP_ID + '.npy'))
         _, y, x, c = self.frames.shape

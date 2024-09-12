@@ -146,7 +146,6 @@ function displayExperimentData(data) {
     tableContainer.appendChild(table);
 }
 
-
 // Ensure an experiment is selected before submitting the form
 function ensureExperimentSelected() {
     if (!selectedExperiment) {
@@ -163,7 +162,7 @@ function triggerDetectDroplets(event) {
     event.preventDefault(); // Prevent the form from submitting in the default way
     if (!ensureExperimentSelected()) return;
 
-    const mode = document.getElementById('mode_gdr').value; // Get the selected value from the dropdown
+    const mode = document.getElementById('mode_dd').value; // Get the selected value from the dropdown
 
     fetch(`http://localhost:8080/detect_droplets?expID=${selectedExperiment}&mode=${mode}`, {
         method: 'POST'
@@ -219,7 +218,7 @@ function triggerGenerateWP(event) {
 
 // Add event listeners to the forms
 function setupFormListeners() {
-    document.getElementById('form_gdr').addEventListener('submit', triggerDetectDroplets);
+    document.getElementById('form_dd').addEventListener('submit', triggerDetectDroplets);
     document.getElementById('form_do').addEventListener('submit', triggerDetectOutliers);
     document.getElementById('form_cc').addEventListener('submit', triggerCellCount);
     document.getElementById('form_wp').addEventListener('submit', triggerGenerateWP);

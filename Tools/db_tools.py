@@ -73,6 +73,8 @@ class DbManager:
             return pd.DataFrame(columns=['WP_ID', 'i', 'GlobalID'])
 
     def generate_wp(self, expID, sample_size=100, exclude_query='index != index'):
+        if exclude_query == '':
+            exclude_query = 'index != index'
         rawloader = RawLoader(expID)
         droplet_df = rawloader.get_droplet_df()
         existing_WPs = self.get_wps(expID, filter_annotations='None')
@@ -214,7 +216,7 @@ class DbManager:
         rawloader = RawLoader(expID)
         droplet_df = rawloader.get_droplet_df()
         dataset = self.get_dataset(expID).map(prepare_inference).batch(32)
-        model = keras.models.load_model(os.path.join(os.getenv('MODEL_DIR'), model_name))
+        model = keras.models.load_model(os.path.join(os.getenv('MODEL_DIR'), 'outlier_detection', model_name))
         y_predict_raw = model.predict(dataset)
         globalIDs = [e['GlobalID'] for e in dataset.unbatch().as_numpy_iterator()]
         y_predict = np.argmax(y_predict_raw, axis=-1).astype(bool)
@@ -248,7 +250,7 @@ class DbManager:
             element['cell_count_input'] = image
             return element
 
-        model = load_model(os.path.join(os.getenv('MODEL_DIR'), model_name))
+        model = load_model(os.path.join(os.getenv('MODEL_DIR'), 'cell_count', model_name))
         prefix = model_name.split('.')[0]
         tags = [layer.name[:-7] for layer in model.layers[-4:]]
 

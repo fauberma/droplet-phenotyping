@@ -13,7 +13,7 @@ dbm = DbManager()
 def index():
     return render_template('index.html')
 
-@app.route('/detetct_droplets', methods=['POST'])
+@app.route('/detect_droplets', methods=['POST'])
 def detect_droplets():
     expID = request.args.get('expID')
     mode = request.args.get('mode')
@@ -23,14 +23,14 @@ def detect_droplets():
 @app.route('/detect_outliers', methods=['POST'])
 def detect_outliers():
     expID = request.args.get('expID')
-    model_name = request.args.get('model_name')
+    model_name = request.args.get('model_name') + '.h5'
     result = dbm.detect_outliers(expID=expID, model_name=model_name)
     return jsonify(result)
 
 @app.route('/cell_count', methods=['POST'])
 def cell_count():
     expID = request.args.get('expID')
-    model_name = request.args.get('model_name')
+    model_name = request.args.get('model_name')  + '.h5'
     result = dbm.cell_count(expID=expID, model_name=model_name)
     return jsonify(result)
 

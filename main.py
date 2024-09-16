@@ -17,6 +17,7 @@ def index():
 def detect_droplets():
     expID = request.args.get('expID')
     mode = request.args.get('mode')
+    print('Droplet detection started...\n')
     result = dbm.detect_droplets(expID=expID, mode=mode)
     return jsonify(result)
 

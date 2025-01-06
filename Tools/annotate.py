@@ -14,7 +14,7 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.realpath(__file__), os.pardir, os.pardir)))
 from Tools.db_tools import DbManager
-from Tools.leica_tools import RawLoader
+from Tools.exp_tools import Experiment
 
 
 def spread_hist(frame, lower, upper, bitdepth=None):
@@ -43,32 +43,23 @@ def create_sliders(channel_df):
 
 class WP:
     def __init__(self, expID, WP_ID):
-        self.base = os.path.join(os.getenv('EXP_DIR'), expID, WP_ID)
-        self.rawloader = RawLoader(expID)
-        self.LUTs = self.rawloader.get_LUTs()
-        self.channel_df = self.rawloader.channel_df
-        self.channel_df.loc[:, 'min_val'] = 0.0
-        self.channel_df.loc[:, 'max_val'] = 1.0
-        self.n_channels = len(self.channel_df.index)
-        self.sliders = create_sliders(self.channel_df)
+        self.experiment = Experiment(expID)
+        self.base = os.path.join(self.experiment.dir, WP_ID)
+        self.csv = os.path.join(self.base, f'{WP_ID}.csv')
 
+        self.LUTs = self.experiment.handler.get_LUTs()
+        self.channel_df = self.experiment.channel_df
+        self.channel_df.loc[:, ['min_val', 'max_val']] = [0.0, 1.0]
+        self.sliders = create_sliders(self.channel_df)
         self.bitdepth = 16
-        self.csv = os.path.join(self.base, WP_ID + '.csv')
 
         self.df = pd.read_csv(self.csv, index_col='i')
+        self.frames = np.load(os.path.join(self.base, f'{WP_ID}.npy'))
         self.i_max = self.df.index.size
-        self.annotations = self.df.drop(columns=['GlobalID']).columns
-
-        # Check if predictions have been made in droplet_df
-        self.droplet_df = pd.read_csv(os.path.join(self.base, os.pardir, 'droplets.csv'), index_col='GlobalID')
-        self.predictions = self.droplet_df.loc[
-            self.df['GlobalID'], self.droplet_df.columns.str.startswith('PREDICTED')]
-
-        self.frames = np.load(os.path.join(self.base, WP_ID + '.npy'))
-        _, y, x, c = self.frames.shape
         self.df.loc[self.i_max, :] = pd.NA  # add last row with NA to df
-        self.frames = np.vstack([self.frames, np.ones((1, y, x, c)) * 10])  # add gray frame as last frame
+        self.frames = np.vstack([self.frames, np.ones(self.frames[[0]].shape) * 10])  # add gray frame as last frame
 
+        self.annotations = self.df.drop(columns=['GlobalID']).columns
         for mode in self.annotations:
             self.mode = mode
             self.i = self.get_first_unlabeled(mode)
@@ -99,9 +90,7 @@ class WP:
         disable_input = self.i == self.i_max
 
         existing_anns = self.df.loc[self.i, :]
-        if self.i < self.i_max:
-            existing_anns = pd.concat([existing_anns, self.predictions.loc[self.df.loc[self.i, 'GlobalID'], :]])
-            existing_anns = existing_anns.to_frame().rename(columns={0: 'Value'})
+        existing_anns = existing_anns.to_frame().rename(columns={0: 'Value'})
         existing_anns = existing_anns.reset_index().to_dict('records')
 
         return progress, progress_label, disable_input, placeholder, fig, existing_anns

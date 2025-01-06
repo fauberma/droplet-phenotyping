@@ -8,8 +8,6 @@ import os
 import glob
 from readlif.reader import LifFile
 import datetime
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
 def parse_lif(file):
     lif = LifFile(file)
@@ -24,7 +22,6 @@ def parse_lif(file):
             image_df.append([i, im['name'], image_ts[t*n_channels], t , n_channels , im['bit_depth'][0], im['scale'][0], merged])
     image_df = pd.DataFrame(image_df, columns=['index', 'name', 'timestamp', 't_index', 'n_channels', 'bit_depth', 'resolution', 'merged'])
     return image_df
-
 
 def _recursive_memblock_is_image(tree, return_list=None):
     """Creates list of TRUE or FALSE if memblock is image"""
@@ -53,30 +50,10 @@ def _recursive_memblock_is_image(tree, return_list=None):
     return return_list
 
 
-def _load_LUTs():
-    LUTs = {}
-    for file in glob.glob(os.path.join(os.path.dirname(__file__), 'LUTs', '*.npy')):
-        name = os.path.basename(file)[:-4]
-        LUTs[name] = np.load(file)
-    return LUTs
-
-
-class RawLoader:
-    def __init__(self, expID):
-        self.expID = expID
-        self.exp_dir = os.path.join(os.getenv('EXP_DIR'), expID)
-        self.param_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='parameters', header=None, index_col=0)
-        self.channel_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='channels', index_col=0)
-        self.frame_df = pd.read_excel(os.path.join(self.exp_dir, 'setup.xlsx'), sheet_name='raw_data', index_col=0)
-        self.conditions = self.frame_df.columns.drop(['droplet_size', 'size_range', 'image_index', 't_index', 'path'], errors='ignore').to_list()
-        if 'Key' in self.param_df.index: #legacy format of setup.xlsx
-            self.annotations = self.param_df.loc['annotations', 1].to_list()
-        else:
-            self.annotations = self.param_df.loc['annotations', :].to_list()
-
-
-
-
+class LeicaHandler:
+    def __init__(self, frame_df, channel_df):
+        self.frame_df = frame_df
+        self.channel_df = channel_df
 
     def get_frame(self, frameID):
         meta = self.get_meta(frameID)
@@ -98,25 +75,16 @@ class RawLoader:
         meta['frameID'] = frameID
         meta['scale'] = image.scale[0]
         meta['bit_depth'] = image.bit_depth[0]
-        meta['channels'] = self.channel_df.shape[0]
+        meta['channels'] = self.channel_df.index.size
         return meta
 
     def get_LUTs(self):
-        LUTs = _load_LUTs()
-        return [LUTs[LUT] for LUT in self.channel_df['LUT']]
+        LUTs = {}
+        for file in glob.glob(os.path.join(os.path.dirname(__file__), 'LUTs', '*.npy')):
+            name = os.path.basename(file)[:-4]
+            LUTs[name] = np.load(file)
+        return np.array([LUTs[LUT] for LUT in self.channel_df['LUT']])
 
-    def get_droplet_df(self, as_multiindex=False):
-        csv_path = os.path.join(self.exp_dir, 'droplets.csv')
-        if os.path.isfile(csv_path):
-            droplet_df = pd.read_csv(csv_path, index_col='GlobalID').convert_dtypes()
-            if as_multiindex:
-                return droplet_df.set_index(pd.MultiIndex.from_product([[self.expID], droplet_df.index], names=['expID', 'GlobalID']))
-            else:
-                return droplet_df
-        else:
-            print('No drop register exists yet.')
 
-    def update_droplet_df(self, droplet_df):
-        csv_path = os.path.join(self.exp_dir, 'droplets.csv')
-        droplet_df.to_csv(csv_path)
+
 

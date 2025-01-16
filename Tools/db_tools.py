@@ -77,8 +77,8 @@ class DbManager:
 
     def add_dataset(self, experiment, shape=(128, 128)): #Experiment object needs to be passed directly and cannot be created due to circular import issue
         droplet_df = experiment.get_droplet_df()
-        droplet_df['batch_id'] = droplet_df.index // int(os.getenv('batch_size'))
-        droplet_df['batch_pos'] = droplet_df.index % int(os.getenv('batch_size'))
+        droplet_df['batch_id'] = droplet_df.index // 1024
+        droplet_df['batch_pos'] = droplet_df.index % 1024
 
         if not os.path.isdir(os.path.join(self.db_dir, experiment.expID)):
             os.mkdir(os.path.join(self.db_dir, experiment.expID))
@@ -177,7 +177,7 @@ class DbManager:
     def filter_dataset(self, expID, GlobalIDs):
         y, x, c = self.existing_dbs.loc[expID, ['y_shape', 'x_shape', 'n_channels']]
         df = pd.DataFrame(GlobalIDs, columns=['GlobalID']).reset_index()
-        df['tfrecord'] = (df['GlobalID'] // int(os.getenv('batch_size'))).astype(int)
+        df['tfrecord'] = (df['GlobalID'] // 1024).astype(int)
         frame_array = np.zeros((len(GlobalIDs), y, x, c), dtype=np.uint16)
         with open(os.path.join(self.db_dir, expID, 'db_spec.yml'), 'r') as file:
             db_spec = yaml.safe_load(file)

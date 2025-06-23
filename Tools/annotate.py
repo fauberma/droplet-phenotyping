@@ -134,7 +134,7 @@ app.layout = html.Div(children=[
     html.Div([
         html.H1(id='header', children=html.Center('WP Annotator'), className='header'),
 
-        dcc.Dropdown(id='WP', options=dbm.existing_wps['expID'] + ' ' + dbm.existing_wps['WP_ID'], clearable=False,
+        dcc.Dropdown(id='WP', options=dbm.existing_wps['exp_id'] + ' ' + dbm.existing_wps['WP_ID'], clearable=False,
                      placeholder='Select Workpackage', className='dropDownMenu'),
 
         dcc.RadioItems(id='annotation_mode', inline=False, className='modeSelector'),

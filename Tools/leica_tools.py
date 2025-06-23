@@ -8,6 +8,7 @@ import os
 import glob
 from readlif.reader import LifFile
 import datetime
+import xml.etree.ElementTree as ET
 
 def parse_lif(file):
     lif = LifFile(file)
@@ -51,12 +52,28 @@ def _recursive_memblock_is_image(tree, return_list=None):
 
 
 class LeicaHandler:
-    def __init__(self, frame_df, channel_df):
+    def __init__(self, frame_df, channel_df=None):
         self.frame_df = frame_df
-        self.channel_df = channel_df
 
-    def get_frame(self, frameID):
-        meta = self.get_meta(frameID)
+        if channel_df is None:
+            liffile = LifFile(self.frame_df.loc[0, 'path'])
+            # Extract unique channel info
+            channels = []
+            seen = set()
+            for elem in liffile.xml_root.iter("WideFieldChannelInfo"):
+                name = elem.attrib.get("UserDefName") or "Unnamed"
+                if name not in seen:
+                    seen.add(name)
+                    channels.append({"channel_name": name, "LUT": elem.attrib.get("LUT")})
+
+            # Create DataFrame
+            self.channel_df = pd.DataFrame(channels)
+            self.channel_df.index.name = "channel_index"
+        else:
+            self.channel_df = channel_df
+
+    def get_frame(self, frame_id):
+        meta = self.get_meta(frame_id)
         lif = LifFile(meta['path'])
         image = lif.get_image(meta['image_index'])
         t = meta['t_index']
@@ -68,11 +85,11 @@ class LeicaHandler:
         frame = np.array([np.array(image.get_frame(c=c, t=t, z=z, m=0)) for c in self.channel_df.index])
         return frame, meta
 
-    def get_meta(self, frameID):
-        meta = self.frame_df.loc[frameID, :].copy()
+    def get_meta(self, frame_id):
+        meta = self.frame_df.loc[frame_id, :].copy()
         lif = LifFile(meta['path'])
         image = lif.get_image(meta['image_index'])
-        meta['frameID'] = frameID
+        meta['frame_id'] = frame_id
         meta['scale'] = image.scale[0]
         meta['bit_depth'] = image.bit_depth[0]
         meta['channels'] = self.channel_df.index.size
@@ -83,7 +100,7 @@ class LeicaHandler:
         for file in glob.glob(os.path.join(os.path.dirname(__file__), 'LUTs', '*.npy')):
             name = os.path.basename(file)[:-4]
             LUTs[name] = np.load(file)
-        return np.array([LUTs[LUT] for LUT in self.channel_df['LUT']])
+        return np.array([LUTs[LUT.lower()] for LUT in self.channel_df['LUT']])
 
 
 

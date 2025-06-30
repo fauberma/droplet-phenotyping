@@ -12,8 +12,6 @@ import re
 import os
 import glob
 from functools import partial
-from dask import delayed, compute
-from dask.distributed import Client
 import yaml
 from dotenv import load_dotenv
 import matplotlib.pyplot as plt
@@ -37,12 +35,7 @@ class DbManager:
             return sample.detect_droplets(mode=mode, return_df=True)
 
         rawloader = RawLoader(expID)
-        if compute_parallel:
-            client = Client()
-            delayed_tasks = [delayed(process_frame)(frameID) for frameID in rawloader.frame_df.index]
-            df_list = compute(*delayed_tasks)
-        else:
-            df_list = [process_frame(frameID) for frameID in rawloader.frame_df.index]
+        df_list = [process_frame(frameID) for frameID in rawloader.frame_df.index]
         droplets = pd.concat(df_list).reset_index(drop=True).rename_axis('GlobalID')
         rawloader.update_droplet_df(droplets)
         self.add_tfrecord(expID)

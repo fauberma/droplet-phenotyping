@@ -47,6 +47,11 @@ class Experiment:
             return None
         return df.astype({'outlier': bool})
 
+    def annotate_frame(self, frame_id):
+        frame, meta = self.handler.get_frame(frame_id)
+        df = self.get_droplet_df().query('frame_id == @frame_id')
+        self.visualize_droplets(frame, df)
+
     def visualize_droplets(self, frame, df, factors=None, save='preview.png'):
         if factors is not None:
             frame = factors.reshape((-1, 1, 1)) * frame
@@ -66,6 +71,10 @@ class Experiment:
     def detect_droplets(self, model_name, TILE_SIZE=512, OVERLAP=0.2):
 
         def suppress_bboxes(droplets):
+            # Filter out droplets with zero width or height
+            valid = (droplets["x_max"] > droplets["x_min"]) & (droplets["y_max"] > droplets["y_min"])
+            droplets = droplets[valid].reset_index(drop=True)
+
             centers = np.stack([(droplets["x_min"] + droplets["x_max"]) / 2, (droplets["y_min"] + droplets["y_max"]) / 2], axis=0)
             sizes = np.stack([droplets["x_max"] - droplets["x_min"], droplets["y_max"] - droplets["y_min"]], axis=0)
             min_dist = np.sqrt(np.sum(np.square(sizes),axis=0))

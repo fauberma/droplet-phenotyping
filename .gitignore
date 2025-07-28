@@ -1,4 +1,7 @@
 /.idea
+/.vscode
 /Analysis/.ipynb_checkpoints
 /Analysis/Experiments
 /.env
+**/__pycache__
+**/.DS_Store

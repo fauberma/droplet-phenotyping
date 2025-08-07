@@ -28,7 +28,6 @@ class DbManager:
         self.conn = sqlite3.connect(os.path.join(self.dir, 'droplets.db'))
         self._initialize_schema()
 
-
     def _initialize_schema(self):
         cursor = self.conn.cursor()
         cursor.execute("""
@@ -53,6 +52,7 @@ class DbManager:
             ap_id TEXT,
             source TEXT,
             timestamp TEXT,
+            status TEXT,
             FOREIGN KEY (droplet_id) REFERENCES droplets(droplet_id)
         )""")
         self.conn.commit()
@@ -129,9 +129,11 @@ class DbManager:
             df["ap_id"] = None
         if "source" not in df.columns:
             df["source"] = "manual"
+        if "status" not in df.columns:
+            df["status"] = "completed"
 
         # Check required columns
-        required = ["experiment_id", "droplet_id", "label_type", "value", "ap_id", "source", "timestamp"]
+        required = ["experiment_id", "droplet_id", "label_type", "value", "ap_id", "source", "timestamp", "status"]
         for col in required:
             if col not in df.columns:
                 raise ValueError(f"Missing required annotation column: '{col}'")
@@ -144,13 +146,31 @@ class DbManager:
                 """
                 INSERT INTO annotations (
                     experiment_id, droplet_id, label_type, value,
-                    ap_id, source, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ap_id, source, timestamp, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 records
             )
 
-    def get_annotations(self, droplet_ids=None, label_type=None):
+    def update_annotation(self, annotation_id, value, status='completed', timestamp=None):
+        """
+        Update the value, status, and timestamp of an annotation using its annotation_id.
+        """
+        timestamp = timestamp or pd.Timestamp.now().isoformat()
+
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE annotations
+            SET value = ?, timestamp = ?, status = ?
+            WHERE annotation_id = ?
+        """, (value, timestamp, status, annotation_id))
+        
+        self.conn.commit()
+
+        if cursor.rowcount == 0:
+            print(f"Warning: No annotation found with annotation_id = {annotation_id}")
+
+    def get_annotations(self, droplet_ids=None, label_type=None, source=None):
         query = "SELECT * FROM annotations"
         clauses = []
         params = []
@@ -161,7 +181,7 @@ class DbManager:
             params.extend(droplet_ids)
 
         if label_type:
-            if isinstance(label_type, (list, tuple, set)):
+            if isinstance(label_type, (list, tuple)):
                 placeholders = ','.join(['?'] * len(label_type))
                 clauses.append(f"label_type IN ({placeholders})")
                 params.extend(label_type)
@@ -169,14 +189,24 @@ class DbManager:
                 clauses.append("label_type = ?")
                 params.append(label_type)
 
+        if source:
+            if isinstance(source, (list, tuple)):
+                placeholders = ','.join(['?'] * len(source))
+                clauses.append(f"source IN ({placeholders})")
+                params.extend(source)
+            else:
+                clauses.append("source = ?")
+                params.append(source)
+
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
 
         return pd.read_sql(query, self.conn, params=params)
 
     def clear_annotations(self):
-        self.conn.execute("DELETE FROM annotations")
+        self.conn.execute("DROP TABLE IF EXISTS annotations")
         self.conn.commit()
+        self._initialize_schema()
 
     def add_dataset(self, frame_generator, tfrecord_manifest):
         droplet_df = self.get_droplets()

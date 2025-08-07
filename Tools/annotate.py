@@ -2,15 +2,15 @@ __author__ = 'Florian Aubermann'
 __email__ = 'florian.aubermann@mr.mpg.de'
 __status__ = 'development'
 
+import dash
+from dash import Dash, html, dcc, ctx, dash_table, Input, Output, State
 
-from dash import Dash, html, dcc, ctx, dash_table, ALL
 import plotly.express as px
-from dash.dependencies import Input, Output, State
-import dash_bootstrap_components as dbc
 import pandas as pd
 import numpy as np
 import os
 import sys
+import argparse
 
 sys.path.append(os.path.abspath(os.path.join(os.path.realpath(__file__), os.pardir, os.pardir)))
 from Tools.db_tools import DbManager
@@ -41,30 +41,41 @@ def create_sliders(channel_df):
     return slider_children
 
 
-class WP:
-    def __init__(self, expID, WP_ID):
-        self.experiment = Experiment(expID)
-        self.base = os.path.join(self.experiment.dir, WP_ID)
-        self.csv = os.path.join(self.base, f'{WP_ID}.csv')
+class AnnotationPackage:
+    def __init__(self, experiment_id, ap_id):
+        self.experiment = Experiment(experiment_id)
+        self.df = self.get_ap()
+        self.droplets = self.df['droplet_id'].unique().copy()
+        self.frames = np.moveaxis(self.experiment.db.filter_dataset(self.droplets), 3, 1)
+        self.label_types = self.df['label_type'].unique().tolist()
 
+        
+        # Create dataframe that stores information about the channel intensities for plotting
         self.LUTs = self.experiment.handler.get_LUTs()
-        self.channel_df = self.experiment.channel_df
+        self.channel_df = self.experiment.handler.channel_df
         self.channel_df.loc[:, ['min_val', 'max_val']] = [0.0, 1.0]
         self.sliders = create_sliders(self.channel_df)
         self.bitdepth = 16
 
-        self.df = pd.read_csv(self.csv, index_col='i')
-        self.frames = np.load(os.path.join(self.base, f'{WP_ID}.npy'))
-        self.i_max = self.df.index.size
-        self.df.loc[self.i_max, :] = pd.NA  # add last row with NA to df
-        self.frames = np.vstack([self.frames, np.ones(self.frames[[0]].shape) * 10])  # add gray frame as last frame
-
-        self.annotations = self.df.drop(columns=['GlobalID']).columns
-        for mode in self.annotations:
-            self.mode = mode
-            self.i = self.get_first_unlabeled(mode)
-            if self.i < self.i_max:
+        self.i_max = len(self.droplets) - 1
+        for i, droplet_id in enumerate(self.droplets):
+            self.i = i
+            if np.any(self.df.query(f'droplet_id == {droplet_id}')['status'].values == "pending"):
                 break
+
+    
+    def get_ap(self):
+        self.experiment.connect_db()
+        return self.experiment.db.get_annotations(source='manual').query(f'ap_id == "{ap_id}"').set_index('annotation_id')
+
+
+    def current_annotation(self):
+        self.df = self.get_ap()
+        annotations = self.df.query(f'droplet_id == {self.droplets[self.i]}').reset_index()
+        annotations.drop(columns=['experiment_id', 'ap_id', 'source', 'droplet_id', 'timestamp'], inplace=True)
+        annotations = annotations.rename(columns={'label_type': 'Label Type', 'value': 'Value', 'status': 'Status', 'annotation_id': 'ID'})
+        return annotations.to_dict('records')
+        
 
     def current_frame(self):
         frame = self.frames[self.i].copy()
@@ -83,168 +94,188 @@ class WP:
         fig.update_layout({
             'plot_bgcolor': 'rgba(0, 0, 0, 0)',
             'paper_bgcolor': 'rgba(0, 0, 0, 0)'})
+        return fig
 
-        progress = 100 * self.i / self.i_max
-        progress_label = f'{self.i}/{self.i_max} frames annotated'
-        placeholder = self.df.loc[self.i, self.mode]
-        disable_input = self.i == self.i_max
+    def current_progress(self):
+        progress = round(100 * (self.i +1)/ (self.i_max+1),1)
+        progress_label = f'{self.i+1}/{self.i_max+1} frames annotated ({progress} %)'
+        return progress_label
 
-        existing_anns = self.df.loc[self.i, :]
-        existing_anns = existing_anns.to_frame().rename(columns={0: 'Value'})
-        existing_anns = existing_anns.reset_index().to_dict('records')
+# CLI argument parser
+parser = argparse.ArgumentParser(description="Launch Droplet Annotator")
+parser.add_argument('--experiment_id', required=True, help='Experiment ID')
+parser.add_argument('--ap_id', required=True, help='Annotation package ID')
+args = parser.parse_args()
 
-        return progress, progress_label, disable_input, placeholder, fig, existing_anns
+experiment_id = args.experiment_id
+ap_id = args.ap_id
+ap = AnnotationPackage(experiment_id=experiment_id, ap_id=ap_id)
 
-    def next_frame(self, skip_annotated=False):
-        self.i = min(self.i + 1, self.i_max)
+app = Dash(__name__)
+app.layout = html.Div(
+    id='mainPanel',
+    children=[
+        html.H2("Droplet Annotator", style={"textAlign": "center", "marginTop": "20px"}),
 
-        while skip_annotated and self.i < self.i_max:
-            if np.any(self.df.loc[self.i, :] == 10):
-                self.i = min(self.i + 1, self.i_max)
-                continue
-            if self.df.isnull().loc[self.i, self.mode]:
-                break
-            self.i = min(self.i + 1, self.i_max)
-
-        return self.current_frame()
-
-    def previous_frame(self):
-        self.i = max(self.i - 1, 0)
-        return self.current_frame()
-
-    def switch_mode(self, new_mode):
-        self.i = self.get_first_unlabeled(new_mode)
-        self.mode = new_mode
-        return self.current_frame()
-
-    def get_first_unlabeled(self, mode):
-        return self.df.loc[:, mode].isnull().idxmax()
-
-    def save_inputs(self, user_input):
-        if user_input != 'nan' and user_input is not None and self.i < self.i_max:
-            self.df.loc[self.i, self.mode] = user_input
-        self.df.iloc[0:self.i_max, :].to_csv(self.csv)
-
-dbm = DbManager()
-wp = None
-
-app = Dash(external_stylesheets=[dbc.themes.LUX, ])
-
-app.layout = html.Div(children=[
-    html.Div([
-        html.H1(id='header', children=html.Center('WP Annotator'), className='header'),
-
-        dcc.Dropdown(id='WP', options=dbm.existing_wps['exp_id'] + ' ' + dbm.existing_wps['WP_ID'], clearable=False,
-                     placeholder='Select Workpackage', className='dropDownMenu'),
-
-        dcc.RadioItems(id='annotation_mode', inline=False, className='modeSelector'),
-
-        dash_table.DataTable(id='existing_annotations_table',
-                             style_cell={'textAlign': 'left', 'fontSize': '12px', 'backgroundColor': '#333333',
-                                         'border': '#333333'},),
-        dash_table.DataTable(id='existing_predictions_table',
-                             style_cell={'textAlign': 'left', 'fontSize': '12px', 'backgroundColor': '#333333',
-                                         'border': '#333333'}),
-    ], className='sidePanel'),
-
-
-    html.Div([
-        dbc.Progress(
-            id='progress',
-            label=f'{0}/{0} frames annotated',
-            value=0,
-            className='progressBar'
-        ),
-
-        # Image plot
-        dcc.Graph(id='frame_image', className='graph-container'),
-
-        dbc.Row([
-            dbc.Button('Back', id='go_back', n_clicks=0, color='Primary'),
-            dcc.Input(
-                id="input_field",
-                type='number',
-                placeholder="Number of cells",
-                min=0,
-                max=10,
-                debounce=True,
-                autoComplete='sus'
+        # Image + progress label
+        html.Div([
+            dcc.Graph(
+                id="image-display",
+                figure=ap.current_frame(),
+                style={
+                    "width": "100%",
+                    "margin": "0 auto"
+                }
             ),
-            dbc.Button('Next', id='go_next', n_clicks=0, color='Primary'),
-            dbc.Button('Skip annotated', id='skip_annotated', n_clicks=0, color='Primary'),
-        ], className='inputRow'
+            html.Div(id="progress-label", children=ap.current_progress(), style={"textAlign": "center", "fontSize": "1.1rem", "margin": "10px"})
+        ], style={"margin": "20px auto", "maxWidth": "80%", "padding": "20px", "border": "1px solid #ccc", "borderRadius": "8px", "backgroundColor": "#fafafa"}),
+
+        # Navigation buttons
+        html.Div([
+            html.Button("Previous", id="prev-button", n_clicks=0, className="nav-button"),
+            html.Button("Next", id="next-button", n_clicks=0, className="nav-button"),
+        ], style={"display": "flex", "justifyContent": "center", "gap": "20px", "marginBottom": "20px"}),
+
+        # Channel sliders
+        html.Div(
+            ap.sliders,
+            style={
+                "margin": "10px auto",
+                "maxWidth": "800px",
+                "padding": "15px",
+                "border": "1px solid #ddd",
+                "borderRadius": "8px",
+                "backgroundColor": "#fcfcfc"
+            }
         ),
 
-        html.Div(id='slider_container'),
+        # Annotation table
+        html.Div([
+            dash_table.DataTable(
+                id='annotation-table',
+                columns=[
+                    {'name': 'Label Type', 'id': 'Label Type', 'editable': False},
+                    {'name': 'Value', 'id': 'Value', 'editable': True, 'type': 'numeric'},
+                    {'name': 'Status', 'id': 'Status', 'editable': False},
+                    {'name': 'ID', 'id': 'ID', 'editable': False}
+                ],
+                data=ap.current_annotation(),
+                editable=True,
+                style_table={
+                    'overflowX': 'auto',
+                    'marginTop': '10px',
+                    'border': '1px solid #ccc',
+                    'borderRadius': '8px',
+                    'padding': '10px'
+                },
+                style_header={
+                    'backgroundColor': '#f5f5f5',
+                    'fontWeight': 'bold',
+                    'fontSize': '1.1rem',
+                    'textAlign': 'center',
+                    'borderBottom': '2px solid #d3d3d3'
+                },
+                style_cell={
+                    'textAlign': 'left',
+                    'padding': '10px',
+                    'fontSize': '1.05rem',
+                    'minWidth': '100px',
+                    'maxWidth': '200px',
+                    'whiteSpace': 'normal',
+                    'border': '1px solid #e0e0e0'
+                },
+                style_data={
+                    'backgroundColor': '#ffffff',
+                    'color': '#333333'
+                },
+                style_data_conditional=[
+                    {
+                        'if': {'column_id': 'Value'},
+                        'textAlign': 'right'
+                    },
+                    {
+                        'if': {'state': 'active'},
+                        'backgroundColor': '#e3f2fd',
+                        'border': '2px solid #2196f3'
+                    },
+                    {
+                        'if': {'state': 'selected'},
+                        'backgroundColor': '#f0f8ff',
+                        'border': '2px solid #2196f3'
+                    }
+                ],
+            )
+        ], style={"margin": "20px auto", "maxWidth": "900px"}),
 
-    ], className='mainPanel'),
+        # Hidden keyboard trigger
+        html.Button(id='next-trigger-button', style={'display': 'none'}),
+
+        # Tip
+        html.Div("Use Enter to save input and Shift+Enter to go to the next droplet.", style={"textAlign": "center", "color": "#555", "fontSize": "0.85rem", "marginTop": "20px"})
     ],
+    style={"fontFamily": "Segoe UI, sans-serif", "color": "#333", "paddingBottom": "50px"}
 )
+
+def update_display_logic():
+    ap.experiment.connect_db()
+    fig = ap.current_frame()
+    label = ap.current_progress()
+    table_data = ap.current_annotation()
+    return fig, label, table_data
 
 
 @app.callback(
-    Output(component_id='progress', component_property='label', allow_duplicate=True),
-    Output(component_id='progress', component_property='value', allow_duplicate=True),
-    Output(component_id='annotation_mode', component_property='options', allow_duplicate=True),
-    Output(component_id='annotation_mode', component_property='value', allow_duplicate=True),
-    Output(component_id='frame_image', component_property='figure', allow_duplicate=True),
-    Output(component_id='slider_container', component_property='children'),
-    Input('WP', 'value'),
+    Output("image-display", "figure", allow_duplicate=True),
+    Output("progress-label", "children"),
+    Output("annotation-table", "data", allow_duplicate=True),
+    Input("next-button", "n_clicks"),
+    Input("prev-button", "n_clicks"),
+    Input("next-trigger-button", "n_clicks"),
     prevent_initial_call=True
 )
-def set_wp(select):
-    expID, WP_ID = select.split(' ')
-    global wp
-    wp = WP(expID, WP_ID)
-
-    progress, progress_label, disable_input, placeholder, fig, existing_annotations = wp.current_frame()
-    return progress_label, progress, wp.annotations, wp.mode, fig, wp.sliders
+def update_display(next_clicks, prev_clicks, proxy_clicks):
+    trigger = ctx.triggered_id
+    if trigger == "next-button" or trigger == "next-trigger-button":
+        ap.i = min(ap.i + 1, ap.i_max)
+    elif trigger == "prev-button":
+        ap.i = max(ap.i - 1, 0)
+    return update_display_logic()
 
 
 @app.callback(
-    Output(component_id='progress', component_property='value'),
-    Output(component_id='progress', component_property='label'),
-    Output(component_id='input_field', component_property='disabled'),
-    Output(component_id='input_field', component_property='value'),
-    Output(component_id='frame_image', component_property='figure'),
-    Output(component_id='existing_annotations_table', component_property='data'),
-    Input(component_id='input_field', component_property='value'),
-    Input(component_id='go_back', component_property='n_clicks'),
-    Input(component_id='go_next', component_property='n_clicks'),
-    Input(component_id='skip_annotated', component_property='n_clicks'),
-    Input(component_id='annotation_mode', component_property='value'),
-    [Input({'type': 'dynamic-slider', 'index': ALL}, 'value')],
+    Output("image-display", "figure", allow_duplicate=True),
+    Input({"type": "dynamic-slider", "index": dash.ALL}, "value"),
+    prevent_initial_call = True
+)
+def update_brightness(slider_values):
+    for i, (min_val, max_val) in enumerate(slider_values):
+        ap.channel_df.loc[i, 'min_val'] = min_val
+        ap.channel_df.loc[i, 'max_val'] = max_val
+    return ap.current_frame()
+
+@app.callback(
+    Output('annotation-table', 'data', allow_duplicate=True),
+    Input('annotation-table', 'data'),
+    State('annotation-table', 'data_previous'),
     prevent_initial_call=True
 )
-def update(user_input, goback, gonext, skip_annotated, new_mode, slider_values):
-    global wp
-    # What did trigger the callback?
-    # User switched the annotation mode. Get the first un-annotated image and jump to this image
-    if ctx.triggered_id == 'annotation_mode':
-        return wp.switch_mode(new_mode)
+def save_table_annotation(current, previous):
+    if previous is None:
+        raise dash.exceptions.PreventUpdate
 
-    # User pressed back button
-    elif ctx.triggered_id == 'go_back':
-        return wp.previous_frame()
+    ap.experiment.connect_db()
+    diffs = [curr for curr, prev in zip(current, previous) if curr['Value'] != prev['Value']]
 
-    elif ctx.triggered_id == 'input_field':
-        wp.save_inputs(user_input)
-        return wp.next_frame(skip_annotated=True)
+    for row in diffs:
+        annotation_id = int(row['ID'])
+        try:
+            new_value = int(row['Value'])
+        except (ValueError, TypeError):
+            continue
+        ap.experiment.db.update_annotation(annotation_id, value=new_value, status="completed")
 
-    elif ctx.triggered_id == 'go_next':
-        wp.save_inputs(user_input)
-        return wp.next_frame()
-
-    elif ctx.triggered_id == 'skip_annotated':
-        wp.save_inputs(user_input)
-        return wp.next_frame(skip_annotated=True)
-
-    else:
-        for i, (min_val, max_val) in enumerate(slider_values):
-            wp.channel_df.loc[i, 'min_val'] = min_val
-            wp.channel_df.loc[i, 'max_val'] = max_val
-        return wp.current_frame()
+    return ap.current_annotation()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run_server(debug=True)

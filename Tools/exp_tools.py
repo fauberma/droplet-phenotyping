@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from keras.models import load_model
+from skimage import filters
+from skimage.transform import hough_circle, hough_circle_peaks
 import logging
 from PIL import Image, ImageDraw
 from Tools.db_tools import DbManager
@@ -27,7 +29,7 @@ class Experiment:
 
         if mode == 'leica':
             self.frame_df = pd.read_excel(os.path.join(self.dir, 'setup.xlsx'), sheet_name='raw_data', index_col=0)
-            self.conditions = self.frame_df.columns.drop(['image_index', 't_index', 'path'], errors='ignore').to_list()
+            self.conditions = self.frame_df.columns.drop(['image_index', 't_index', 'path', 'droplet_size', 'size_range'], errors='ignore').to_list()
             try:
                 channel_df = pd.read_excel(os.path.join(self.dir, 'setup.xlsx'), sheet_name='channels', index_col='channel_index')
                 self.handler = LeicaHandler(self.frame_df, channel_df)
@@ -38,14 +40,26 @@ class Experiment:
         else:
             raise ValueError(f"Unsupported mode: {self.mode}")
 
-        self.db = DbManager(exp_id)
+        self.connect_db()
+    
+    def connect_db(self):
+        self.db = DbManager(self.exp_id)
 
     def get_droplet_df(self):
-        df = self.db.get_droplets()
+        df = self.db.get_droplets().astype({'outlier': bool})
         if df.empty:
             print('No droplets were detected yet.')
             return None
-        return df.astype({'outlier': bool})
+        return df.join(self.frame_df[self.conditions], on='frame_id')
+    
+    def get_annotations(self, source, remove_duplicates=False):
+        df = self.db.get_annotations(source=source)
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+        if remove_duplicates:
+            df = df.sort_values('timestamp', ascending=False).drop_duplicates(subset=['droplet_id', 'label_type', 'source'])
+        
+        return df.pivot(index='droplet_id', columns='label_type', values='value').join(self.get_droplet_df())
 
     def annotate_frame(self, frame_id):
         frame, meta = self.handler.get_frame(frame_id)
@@ -67,6 +81,65 @@ class Experiment:
             image_draw.rectangle(xy=(drop.x_min, drop.y_min, drop.x_max, drop.y_max),
                                  outline=colors[drop.get('outlier', False)], width=4)
         im.save(os.path.join(self.dir, save))
+
+    def detect_droplets_legacy(self, mode='sweep'):
+        df_list = []
+        for frame_id in self.frame_df.index:
+            frame, meta = self.handler.get_frame(frame_id)
+            bg_subtracted = frame[0] - filters.gaussian(frame[0], 3)
+            t = filters.threshold_otsu(bg_subtracted)
+            binary = bg_subtracted < t
+            del frame, bg_subtracted
+            if mode == 'constant':
+                radii = [(meta['droplet_size'] * meta['scale']) // 2]
+            elif mode == 'sweep' and 'size_range' in meta.index:
+                mean = (meta['droplet_size'] * meta['scale']) // 2
+                span = (meta['size_range'] * meta['scale']) // 2
+                radii = np.arange(mean - span, mean + span)
+            else:
+                raise ValueError(f"Invalid mode '{mode}'. Use 'constant' or 'sweep'.")
+
+            threshold = meta.get('threshold', 0.7)
+
+            #Perform Hough circle detection
+            hough_res = hough_circle(binary, radii)
+            score, x, y, r = hough_circle_peaks(
+                hough_res, radii,
+                normalize=True,
+                min_xdistance=int(radii[0] * 1.4),
+                min_ydistance=int(radii[0] * 1.4),
+                threshold=threshold
+            )
+            df = pd.DataFrame({'Score': score, 'x': x, 'y': y, 'r': r}).astype({'Score': float, 'x': int, 'y': int, 'r': int})
+            df = df.query(f'y > r and {binary.shape[0]} - y > r and x > r and {binary.shape[1]} - x > r').reset_index()
+
+            if not df.empty:
+                df['x_min'], df['y_min'], df['x_max'], df['y_max'] \
+                    = df['x'] - df['r'], df['y'] - df['r'], df['x'] + df['r'], df['y'] + df['r']
+                df['x_shape'], df['y_shape'], df['frame_id'] \
+                    = df['x_max'] - df['x_min'], df['y_max'] - df['y_min'], meta['frame_id']
+            df_list.append(df)
+        
+        droplet_df = pd.concat(df_list, ignore_index=True)
+        droplet_df.index.name='droplet_id'
+        droplet_df.reset_index(inplace=True)
+        droplet_df['outlier'] = False
+
+        self.db.add_droplets(droplet_df)
+
+        tfrecord_manifest = {
+            'n_frames': droplet_df.index.size,
+            'y_shape': 128,
+            'x_shape': 128,
+            'n_channels': self.handler.channel_df.index.size,
+            'channel_info': self.handler.channel_df['channel_name'].to_dict(),
+        }
+        
+        def frame_generator():
+            for frame_id in self.frame_df.index:
+                yield self.handler.get_frame(frame_id)
+
+        self.db.add_dataset(frame_generator(), tfrecord_manifest)
 
     def detect_droplets(self, model_name, TILE_SIZE=512, OVERLAP=0.2):
 
@@ -183,37 +256,34 @@ class Experiment:
         annotation_df = pd.DataFrame(rows)
         self.db.add_annotations(annotation_df)
 
-    def load_wps(self):
-        # check for Work Packages with droplet annotations
-        files = glob.glob(os.path.join(self.dir, 'WP_*', '*.csv'))
-        data = []
-        for file in files:
-            WP_ID = re.search(r'WP_[0-9]+', file).group()
-            df = pd.read_csv(file, index_col='i')
-            df.drop(columns=['GlobalID'], errors='ignore', inplace=True)
-            labels = list(df.columns)
-            data.append([WP_ID, file, labels])
+    def generate_wp(self, labels, size, subset_query=None, droplet_ids=None):
+        if droplet_ids is None:
+            droplet_df = self.get_droplet_df()
+            existing_annotations = self.db.get_annotations(source='manual')
+            droplet_df.drop(index=existing_annotations['droplet_id'].unique(), inplace=True)
+            if subset_query is not None:
+                droplet_df = droplet_df.query(subset_query)
+            selection = droplet_df.sample(size).index
+        else:
+            selection = droplet_ids
 
-        return pd.DataFrame(data, columns=['WP_ID', 'csv_file', 'labels']).reset_index(drop=True)
+        ap = pd.DataFrame(index=selection, columns=labels).reset_index().rename_axis(index='i')
+        frames = np.moveaxis(self.db.filter_dataset(ap['droplet_id']), 3, 1)
 
-    def generate_wp(self, sample_size=100, exclude_query='index != index'):
-        if exclude_query == '':
-            exclude_query = 'index != index'
+        ap_id = 'AP_1'
+        while True:
+            if os.path.isdir(os.path.join(self.dir, ap_id)):
+                ap_id = 'AP_' + str(int(ap_id.split('_')[1]) + 1)
+            else:
+                break
+        os.mkdir(os.path.join(self.dir, ap_id))
+        ap.to_csv(os.path.join(self.dir, ap_id, f'{ap_id}.csv'))
+        np.save(os.path.join(self.dir, ap_id, f'{ap_id}.npy'), frames)
 
-        dbm = DbManager()
-        droplet_df = self.get_droplet_df()
-        existing_WPs = dbm.get_wps(self, filter_annotations='None')
-        wpID = 'WP_' + str(dbm.existing_wps.query(f'exp_id == "{self.exp_id}"').index.size + 1)
-        droplet_df.drop(index=existing_WPs['GlobalID'], inplace=True)
-        droplet_df.drop(index=droplet_df.query(exclude_query).index, inplace=True)
-        selection = droplet_df.groupby('frameID').sample(sample_size).index
-
-        wp = pd.DataFrame(index=selection, columns=self.annotations).reset_index().rename_axis(index='i')
-        frames = np.moveaxis(dbm.filter_dataset(self.exp_id, wp['global_id']), 3, 1)
-
-        os.mkdir(os.path.join(self.dir, wpID))
-        wp.to_csv(os.path.join(self.dir, wpID, f'{wpID}.csv'))
-        np.save(os.path.join(self.dir, wpID, f'{wpID}.npy'), frames)
+        annotations = ap.melt(id_vars='droplet_id', var_name='label_type',value_name='value')
+        annotations['ap_id'] = ap_id
+        annotations['status'] = 'pending'
+        self.db.add_annotations(annotations)
 
     @staticmethod
     def sliding_window(full_width, full_height, TILE=512, OVERLAP=0.2):

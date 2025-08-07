@@ -1,137 +1,50 @@
-body {
-    font-family: sans-serif;
-    background-color: #1E1E1E;
-    color: #FFA500;  /* Orange color */
+/* General button style */
+.nav-button {
+    font-size: 1rem;
+    padding: 10px 20px;
+    border-radius: 6px;
+    border: none;
+    background-color: #1976d2;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
 }
 
-.sidePanel {
-    position: fixed;
-    left: 0;
-    top: 0;
-    width:15%;
-    height: 100%;
-    background-color: #333333;
+.nav-button:hover {
+    background-color: #125aa1;
 }
 
-.header {
-    font-size: 24px;
-    color: #FFA500;
-    margin-top: 40px;
-    margin_bottom: 10px;
-    margin-left: 10px;
-    margin-right: 10px;
+/* Improve general DataTable focus appearance */
+.dash-cell.focused {
+    background-color: #e6f4ff !important;
+    border: 2px solid #2196f3 !important;
 }
 
-.dropDownMenu {
-    font-size: 15px;
-    margin-left: 10px;
-    margin-right: 10px;
-    margin-bottom: 10px;
+.dash-cell.focused input {
+    background-color: #ffffff !important;
+    color: #000 !important;
+    font-size: 1rem !important;
+    padding: 8px !important;
 }
 
-.modeSelector {
-    font-size: 15px;
-    textmargin-left: 10px;
-    margin-left: 10px;
-    margin-right: 10px;
-    margin-bottom: 50px;
-    align: center;
+/* Smooth hover effect on rows */
+.dash-table-container .dash-spreadsheet-container tr:hover td {
+    background-color: #f9f9f9 !important;
+}
+/* Use a modern, readable system font stack across the app */
+body, .dash-table-container {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #333;
 }
 
-#existing_annotations_table {
-    border-bottom: 1pt solid;
-    border-top: 1pt solid;
-    margin-left: 10px;
-    margin-right: 10px;
-}
-
-.mainPanel {
-    position: fixed;
-    left: 15%;
-    width: 85%;
-    height: 100%;
-    background-color: #1E1E1E;
-}
-
-.progressBar {
-    height: 20px;
-    border-radius: 10px;
-    margin-top: 2%;
-    margin-bottom: 2%;
-    margin-left: 5%;
-    margin-right: 5%;
-    background-color: #d3d3d3;
-}
-
-.progressBar div {
-    background-color: #FFA500;
-    color: #1E1E1E;
-    align: center;
-}
-
-.graph-container {
-    height: 50vh;
-    margin-left: 60px;
-    margin-right: 60px;
-    background-color: #1E1E1E;
-}
-
-
-
-#go_back {
-    location: fixed
-    left: 0%
-    height: 100%;
-    width: 20%;
-    border-radius: 10px;
-    margin-left: 5%;
-    color: #d3d3d3;
-    background-color: #333333;
-}
-
-#input_field {
-    location: fixed
-    left: 40%
-    height: 100%;
-    width: 30%;
-    border-radius: 10px;
-    margin-left: 10%;
-    margin-rightt: 10%;
-    color: #d3d3d3;
-    background-color: #333333;
-}
-
-#go_next {
-    location: fixed
-    left: 80%
-    height: 100%;
-    width: 20%;
-    border-radius: 10px;
-    margin-left: 10%;
-    color: #d3d3d3;
-    background-color: #333333;
-}
-
-#slider_container {
-    width: 70%;
-    height: 30%;
-}
-
+/* Improve overall slider spacing */
 .slider_label {
-    font-size: 15px;
-    color: #d3d3d3;
-    width: 15%;
-    height: 10%;
-    margin-left: 5%;
-    vertical-align: bottom;
+    margin-top: 12px;
+    margin-bottom: 4px;
+    font-weight: 500;
+    color: #444;
 }
 
 .slider_widget {
-    location: fixed;
-    top: 0%;
-    margin-left: 20%;
-    width: 60%;
-    height: 10%;
+    margin-bottom: 16px;
 }
-
-

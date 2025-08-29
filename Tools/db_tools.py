@@ -203,10 +203,14 @@ class DbManager:
 
         return pd.read_sql(query, self.conn, params=params)
 
-    def clear_annotations(self):
-        self.conn.execute("DROP TABLE IF EXISTS annotations")
+    def remove_annotations(self, annotation_ids):
+        if isinstance(annotation_ids, (int, str)):
+                annotation_ids = [annotation_ids]
+
+        placeholders = ','.join(['?'] * len(annotation_ids))
+        query = f"DELETE FROM annotations WHERE annotation_id IN ({placeholders})"
+        self.conn.execute(query, annotation_ids)
         self.conn.commit()
-        self._initialize_schema()
 
     def add_dataset(self, frame_generator, tfrecord_manifest):
         droplet_df = self.get_droplets()

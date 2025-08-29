@@ -256,34 +256,36 @@ class Experiment:
         annotation_df = pd.DataFrame(rows)
         self.db.add_annotations(annotation_df)
 
-    def generate_wp(self, labels, size, subset_query=None, droplet_ids=None):
+    def generate_ap(self, ap_id, labels, size, subset_query='index == index', droplet_ids=None, description=None):
+        prev_anns = self.db.get_annotations(source='manual')
+        
+        if ap_id in prev_anns['ap_id'].unique():
+            raise Exception(f'Annotation package with id "{ap_id}" exists already.')
+        
         if droplet_ids is None:
-            droplet_df = self.get_droplet_df()
-            existing_annotations = self.db.get_annotations(source='manual')
-            droplet_df.drop(index=existing_annotations['droplet_id'].unique(), inplace=True)
-            if subset_query is not None:
-                droplet_df = droplet_df.query(subset_query)
-            selection = droplet_df.sample(size).index
-        else:
-            selection = droplet_ids
+            droplet_ids = self.get_droplet_df().query(subset_query + f' & index not in {prev_anns['droplet_id'].tolist()}').sample(size).index
 
-        ap = pd.DataFrame(index=selection, columns=labels).reset_index().rename_axis(index='i')
-        frames = np.moveaxis(self.db.filter_dataset(ap['droplet_id']), 3, 1)
-
-        ap_id = 'AP_1'
-        while True:
-            if os.path.isdir(os.path.join(self.dir, ap_id)):
-                ap_id = 'AP_' + str(int(ap_id.split('_')[1]) + 1)
-            else:
-                break
-        os.mkdir(os.path.join(self.dir, ap_id))
-        ap.to_csv(os.path.join(self.dir, ap_id, f'{ap_id}.csv'))
-        np.save(os.path.join(self.dir, ap_id, f'{ap_id}.npy'), frames)
-
-        annotations = ap.melt(id_vars='droplet_id', var_name='label_type',value_name='value')
-        annotations['ap_id'] = ap_id
-        annotations['status'] = 'pending'
+        annotations = pd.DataFrame(
+            index=pd.MultiIndex.from_product([droplet_ids, labels], names=['droplet_id', 'label_type']), 
+            columns=['value', 'ap_id', 'status'], 
+            data=[[np.nan, ap_id, 'pending']]
+            ).reset_index()
+        
         self.db.add_annotations(annotations)
+        
+        db_manifest = self.db.get_manifest()
+        if 'annotation_packages' not in db_manifest.keys():
+            db_manifest['annotation_packages'] = {}
+        db_manifest['annotation_packages'][ap_id] = description
+        self.db.update_manifest(db_manifest)
+
+    def remove_ap(self, ap_id):
+        ids = self.db.get_annotations(source='manual').query(f'ap_id == "{ap_id}"')['annotation_id']
+        self.db.remove_annotations(ids.tolist())
+
+        db_manifest = self.db.get_manifest()
+        del db_manifest['annotation_packages'][ap_id]
+        self.db.update_manifest(db_manifest)
 
     @staticmethod
     def sliding_window(full_width, full_height, TILE=512, OVERLAP=0.2):
